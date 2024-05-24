@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full Tutorial</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+        integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
+</head>
+
+<body>
+    <div class="container mt-5">
+        <h1>Full Tutorial</h1>
+        <p>This tutorial walks you through setting up a Node.js application with MySQL, user registration, email
+            verification, and serving static HTML, CSS, and JavaScript files. Each part of the code is explained, and
+            the features and functions are applied in a sequence that gradually builds the program.</p>
+          
+        <details>
+            <summary>
+                <h2>Step 1: Setting Up the Project</h2>
+            </summary>
+            <div id="step1-content">
+                <p>Create a new directory for your project and navigate to it in your terminal. Run the following
+                    command to initialize a new Node.js project:</p>
+                <pre><code>npm init -y</code></pre>
+                <p>Install the necessary dependencies using the following command:</p>
+                <pre><code>npm install express body-parser nodemailer sequelize mysql2 crypto</code></pre>
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 2: Project Structure</h2>
+            </summary>
+            <div id="step2-content">
+                <p>Here is the structure of the project:</p><br>
+                <img src="image1.png" alt="Structure">
+
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 3: Configuring the Database</h2>
+            </summary>
+            <div id="step3-content">
+                <p><strong>This file configures Sequelize to connect to the MySQL database.</strong>
+                <pre><code>const { Sequelize } = require('sequelize');
+
+                    const sequelize = new Sequelize('tutorial_db', 'root', 'root', {
+                    host: '127.0.0.1',
+                    dialect: 'mysql',
+                    port: 8889
+                    });
+
+                    module.exports = sequelize;
+                </code></pre>
+                <br><strong>Sequelize:</strong> An ORM for Node.js that
+                makes it easy to work with relational databases.<br><strong>new Sequelize:</strong> Creates a new
+                Sequelize instance with
+                database name, username, password, host, dialect, and port.<br>
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 4: Defining the User Model</h2>
+            </summary>
+            <div id="step4-content">
+                <p><strong>models/User.js:</strong>
+                    This file defines the User model using Sequelize.</p>
+                <pre><code>const { DataTypes } = require('sequelize');
+                    const sequelize = require('../config/database');
+                    
+                    const User = sequelize.define('User', {
+                        id: {
+                            type: DataTypes.INTEGER,
+                            autoIncrement: true,
+                            primaryKey: true
+                        },
+                        username: {
+                            type: DataTypes.STRING,
+                            allowNull: false
+                        },
+                        email: {
+                            type: DataTypes.STRING,
+                            allowNull: false,
+                            unique: true
+                        },
+                        password: {
+                            type: DataTypes.STRING,
+                            allowNull: false
+                        },
+                        verified: {
+                            type: DataTypes.BOOLEAN,
+                            defaultValue: false
+                        }
+                    }, {
+                        tableName: 'users',
+                        timestamps: false
+                    });
+                    
+                    module.exports = User;
+                    </code></pre>
+                <p>DataTypes: Sequelize data types.
+                    <br>User: Defines a User model with fields id, username, email, password, and verified.
+                </p>
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 5: Creating the Main Application</h2>
+            </summary>
+            <div id="step5-content">
+                <p><strong>index.js:</strong>
+                    This file sets up the Express server, routes, and email service.</p>
+                <pre><code>const express = require('express');
+                        const bodyParser = require('body-parser');
+                        const nodemailer = require('nodemailer');
+                        const crypto = require('crypto');
+                        const path = require('path');
+                        const sequelize = require('./config/database');
+                        const User = require('./models/User');
+                        
+                        const app = express();
+                        const port = 3000;
+                        
+                        app.use(bodyParser.json());
+                        app.use(express.static(path.join(__dirname, 'public_html'))); // Serve static files
+                        
+                        sequelize.sync()
+                            .then(() => console.log('MySQL connected and tables created'))
+                            .catch(err => console.log(err));
+                        
+                        const verificationCodes = {};
+                        
+                        // Configure email service with Sendinblue
+                        const transporter = nodemailer.createTransport({
+                            host: 'smtp-relay.sendinblue.com',
+                            port: 587,
+                            auth: {
+                                user: 'your-sendinblue-email',  // Replace with your Sendinblue login email
+                                pass: 'your-sendinblue-api-key' // Replace with your Sendinblue API key
+                            }
+                        });
+                        
+                        // Serve the HTML file
+                        app.get('/', (req, res) => {
+                            res.sendFile(path.join(__dirname, 'public_html', 'tutorial.html'));
+                        });
+                        
+                        // Handle user signup
+                        app.post('/signup', async (req, res) => {
+                            const { username, email, password } = req.body;
+                            try {
+                                let user = await User.findOne({ where: { email } });
+                                if (user) {
+                                    return res.json({ success: false, message: 'Email already registered' });
+                                }
+                        
+                                user = await User.create({ username, email, password });
+                        
+                                const verificationCode = crypto.randomBytes(3).toString('hex');
+                                verificationCodes[email] = verificationCode;
+                        
+                                const mailOptions = {
+                                    from: 'your-sendinblue-email',
+                                    to: email,
+                                    subject: 'Email Verification',
+                                    text: `Your verification code is: ${verificationCode}`
+                                };
+                        
+                                transporter.sendMail(mailOptions, (error, info) => {
+                                    if (error) {
+                                        console.error('Error sending email:', error);
+                                        return res.json({ success: false, message: 'Error sending email' });
+                                    }
+                                    console.log('Email sent:', info.response);
+                                    res.json({ success: true, message: 'Verification code sent' });
+                                });
+                            } catch (error) {
+                                console.error(error);
+                                res.status(500).send('Server error');
+                            }
+                        });
+                        
+                        // Handle email verification
+                        app.post('/verify', async (req, res) => {
+                            const { verificationCode } = req.body;
+                            const email = Object.keys(verificationCodes).find(email => verificationCodes[email] === verificationCode);
+                        
+                            if (!email) {
+                                return res.json({ success: false, message: 'Invalid verification code' });
+                            }
+                        
+                            try {
+                                const user = await User.findOne({ where: { email } });
+                                if (!user) {
+                                    return res.json({ success: false, message: 'User not found' });
+                                }
+                        
+                                user.verified = true;
+                                await user.save();
+                                delete verificationCodes[email];
+                                res.json({ success: true, message: 'Email verified successfully' });
+                            } catch (error) {
+                                console.error(error);
+                                res.status(500).send('Server error');
+                            }
+                        });
+                        
+                        app.listen(port, () => {
+                            console.log(`Server is running on port ${port}`);
+                        });
+                        </code></pre>
+                <p>express: Sets up the Express server.<br>
+                    bodyParser: Parses incoming request bodies.<br>
+                    nodemailer: Sends emails.<br>
+                    crypto: Generates random verification codes.<br>
+                    sequelize.sync(): Syncs models with the database.<br>
+                    verificationCodes: Stores verification codes temporarily.<br>
+                    transporter: Configures the email transporter with Sendinblue.<br>
+                    app.get('/'): Serves the main HTML file.<br>
+                    app.post('/signup'): Handles user signup and sends a verification email.<br>
+                    app.post('/verify'): Handles email verification.</p>
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 6: Creating the HTML, CSS, and JavaScript Files</h2>
+            </summary>
+            <div id="step6-content">
+                <p>You can create the HTML and css form for user signup and email verification yourself.</p>
+                <p>The following is the JS file</p>
+                <pre><code>document.getElementById('signupForm').addEventListener('submit', function(event) {
+                    event.preventDefault();
+                
+                    const username = document.getElementById('username').value;
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                
+                    fetch('/signup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, email, password })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('signupForm').style.display = 'none';
+                            document.getElementById('verification').style.display = 'block';
+                        } else {
+                            document.getElementById('message').textContent = data.message;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('message').textContent = 'An error occurred. Please try again.';
+                    });
+                });
+                
+                document.getElementById('verificationForm').addEventListener('submit', function(event) {
+                    event.preventDefault();
+                
+                    const verificationCode = document.getElementById('verificationCode').value;
+                
+                    fetch('/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ verificationCode })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('message').textContent = 'Email verified successfully!';
+                        } else {
+                            document.getElementById('message').textContent = data.message;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('message').textContent = 'An error occurred. Please try again.';
+                    });
+                });
+                </code></pre>
+
+            </div>
+        </details>
+
+        <details>
+            <summary>
+                <h2>Step 7: Running the Application using</h2>
+            </summary>
+            <div id="step6-content">
+                <pre><code>node index.js
+                </code></pre>
+            </div>
+        </details>
+    </div>
+</body>
+
+</html>
